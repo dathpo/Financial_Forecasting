@@ -1,18 +1,118 @@
 ---
 title: "Financial Forecasting"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
-
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
-
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
-
 ```{r}
-print("hi")
+library(neuralnet)
+library(quantmod)
+library(caret)
+
+x.train <- as.data.frame(runif(50, min = 0, max = 100))
+y.train <- sqrt(x.train)
+train.df <- cbind(x.train, y.train)
+colnames(train.df) <- c("x", "y")
+
+net.sqrt <- neuralnet(y~x, train.df, hidden = c(10, 10), threshold = 0.01)
+print(net.sqrt)
+```
+```{r}
+plot(net.sqrt)
+```
+```{r}
+test.df <- as.data.frame((1:10)^2)
+net.results <- compute(net.sqrt, test.df)
+ls(net.results)
+```
+```{r}
+print(net.results$net.result)
+```
+```{r}
+clean.y <- cbind(test.df, sqrt(test.df), as.data.frame(net.results$net.result))
+colnames(clean.y) <- c("x", "y", "y pred.")
+print(clean.y)
+```
+```{r}
+y <- net.results$net.result
+df <- data.frame(y, x1=Lag(y, 1), x2=Lag(y, 2))
+names(df) <- c('y', 'x1', 'x2')
+head(df)
+```
+```{r}
+assets <- c("BTC-USD")
+assets <- sort(assets)
+stocks = lapply(assets, function(sym) {
+  dailyReturn(na.omit(getSymbols(sym,
+                                   src="yahoo",
+                                   from="2018-02-20",
+                                   to="2019-02-20",
+                                   auto.assign=FALSE)))
+})
+
+df <- as.data.frame(do.call(merge.xts, stocks))
+names(df) <- assets
+df
+```
+```{r}
+train.index <- createDataPartition(df$`BTC-USD`,
+                                   p = .75,
+                                   list = FALSE,
+                                   times = 1)
+y.train <- df[train.index,]
+y.test <- df[-train.index,]
+length(y.train)
+length(y.test)
 ```
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+```{r}
+xs <- vector("list", 10)
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+#for (i in 1:10) {
+#  xs[i] <- Lag(y.train, i)
+#}
 
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+train.df <- data.frame(y.train,
+                 x1=Lag(y.train, 1),
+                 x2=Lag(y.train, 2),
+                 x3=Lag(y.train, 3),
+                 x4=Lag(y.train, 4),
+                 x5=Lag(y.train, 5),
+                 x6=Lag(y.train, 6),
+                 x7=Lag(y.train, 7),
+                 x8=Lag(y.train, 8),
+                 x9=Lag(y.train, 9),
+                 x10=Lag(y.train, 10))
+names(train.df) <- c('y', 'x1', 'x2', 'x3', 'x4', 'x5',
+                     'x6', 'x7', 'x8', 'x9', 'x10')
+head(train.df)
+```
+
+```{r}
+train.df <- na.omit(train.df)
+head(train.df)
+```
+
+```{r}
+net <- neuralnet(y~x1+x2+x3+x4+x5+x6+x7+x8+x9+x10,
+                 train.df,
+                 hidden = c(10, 10, 10, 10),
+                 threshold = 0.01)
+plot(net)
+```
+```{r}
+test.df <- as.data.frame((1:10)^2)
+net.results <- compute(net.sqrt, test.df)
+ls(net.results)
+
+print(net.results$net.result)
+
+clean.y <- cbind(test.df, sqrt(test.df), as.data.frame(net.results$net.result))
+colnames(clean.y) <- c("x", "y", "y pred.")
+print(clean.y)
+
+y <- net.results$net.result
+df <- data.frame(y, x1=Lag(y, 1), x2=Lag(y, 2))
+names(df) <- c('y', 'x1', 'x2')
+head(df)
+```
