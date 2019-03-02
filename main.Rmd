@@ -10,9 +10,9 @@ library(caret)
 library(ggplot2)
 library(scales)
 
-assets <- c("BTC-USD")
-assets <- sort(assets)
-stocks = lapply(assets, function(sym) {
+tickers <- c("BTC-USD")
+tickers <- sort(tickers)
+ticker.returns = lapply(tickers, function(sym) {
   dailyReturn(na.omit(getSymbols(sym,
                                    src="yahoo",
                                    from="2015-02-20",
@@ -20,14 +20,24 @@ stocks = lapply(assets, function(sym) {
                                    auto.assign=FALSE)))
 })
 
-df <- as.data.frame(do.call(merge.xts, stocks))
-names(df) <- assets
+df <- as.data.frame(do.call(merge.xts, ticker.returns))
+names(df) <- tickers
 df
 ```
 ```{r}
 df <- data.frame(df,
-                 x1=Lag(df, 1))
-names(df) <- c('x1', 'y')
+                 x1=Lag(df, 1),
+                 x2=Lag(df, 2),
+                 x3=Lag(df, 3),
+                 x4=Lag(df, 4),
+                 x5=Lag(df, 5),
+                 x6=Lag(df, 6),
+                 x7=Lag(df, 7),
+                 x8=Lag(df, 8),
+                 x9=Lag(df, 9),
+                 x10=Lag(df, 10)
+)
+names(df) <- c('x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9', 'x10', 'y')
 nrow(df)
 head(df)
 ```
@@ -41,10 +51,10 @@ head(df)
 train.index <- round(0.8 * nrow(df))
 train.df <- df[1:train.index,]
 test.df <- df[-(1:train.index),]
-tail(train.df)
-head(test.df)
 nrow(train.df)
 nrow(test.df)
+tail(train.df)
+head(test.df)
 ```
 ```{r, fig.width=11, fig.height=4}
 plot.train.df <- cbind(day = rownames(train.df), train.df)
@@ -52,7 +62,8 @@ plot.test.df <- cbind(day = rownames(test.df), test.df)
 ggplot() +
 geom_line(data=plot.train.df, aes(x=as.Date(plot.train.df$day), y=plot.train.df$y, colour="Training")) +
 geom_line(data=plot.test.df, aes(x=as.Date(plot.test.df$day), y=plot.test.df$y, colour="Test")) +
-xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent)
+xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) +
+ggtitle("BTC-USD Daily Returns Feb. 2015 - Feb. 2019")
 ggsave("btcperf.pdf", width=8, height=4)
 ```
 ```{r}
@@ -60,10 +71,10 @@ x.test <- test.df[, 1:(length(names(df))-1)]
 y.test <- test.df[, length(names(df))]
 y.train <- train.df[, length(names(df))]
 set.seed(42)
-net <- neuralnet(y~x1,
+net <- neuralnet(y~x1+x2+x3+x4+x5+x6+x7+x8+x9+x10,
                  train.df,
-                 hidden = c(90, 60, 30, 20),
-                 threshold = 0.03
+                 hidden = c(90, 60, 30),
+                 threshold = 0.01
                  # stepmax = 1e+9
                  # rep = 5
 )
@@ -90,6 +101,28 @@ test.rmse
 
 cat("\nRMSE Difference (Test - Train):\n")
 test.rmse - train.rmse
+```
+```{r}
+y.train.comp.df
+y.test.comp.df
+```
+```{r, fig.width=11, fig.height=4}
+ggplot(data=y.train.comp.df, aes(x=as.Date(y.train.comp.df$Date))) +
+geom_line(aes(y=y.train.comp.df$`y (train)`, colour="Actual")) +
+geom_line(aes(y=y.train.comp.df$`y pred. (train)`, colour="Predicted")) +
+xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
+scale_color_discrete("Values") +
+ggtitle("BTC-USD Daily Returns - Training Set: Actual vs Predicted Values")
+ggsave("train_perf.pdf", width=8, height=4)
+```
+```{r, fig.width=11, fig.height=4}
+ggplot(data=y.test.comp.df, aes(x=as.Date(y.test.comp.df$Date))) +
+geom_line(aes(y=y.test.comp.df$`y (test)`, colour="Actual")) +
+geom_line(aes(y=y.test.comp.df$`y pred. (test)`, colour="Predicted")) +
+xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
+scale_color_discrete("Values") +
+ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
+ggsave("test_pred.pdf", width=8, height=4)
 ```
 ```{r}
 # plot(net)
