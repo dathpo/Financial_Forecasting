@@ -1,51 +1,21 @@
 ---
 title: "Financial Forecasting"
 output:
-  html_document:
-    df_print: paged
+  html_document
 ---
 ```{r}
 library(neuralnet)
 library(quantmod)
 library(caret)
+library(ggplot2)
+library(scales)
 
-x.train <- as.data.frame(runif(50, min = 0, max = 100))
-y.train <- sqrt(x.train)
-train.df <- cbind(x.train, y.train)
-colnames(train.df) <- c("x", "y")
-
-net.sqrt <- neuralnet(y~x, train.df, hidden = c(10, 10), threshold = 0.01)
-print(net.sqrt)
-```
-```{r}
-plot(net.sqrt)
-```
-```{r}
-test.df <- as.data.frame((1:10)^2)
-net.results <- compute(net.sqrt, test.df)
-ls(net.results)
-```
-```{r}
-print(net.results$net.result)
-```
-```{r}
-clean.y <- cbind(test.df, sqrt(test.df), as.data.frame(net.results$net.result))
-colnames(clean.y) <- c("x", "y", "y pred.")
-print(clean.y)
-```
-```{r}
-y <- net.results$net.result
-df <- data.frame(y, x1=Lag(y, 1), x2=Lag(y, 2))
-names(df) <- c('y', 'x1', 'x2')
-head(df)
-```
-```{r}
 assets <- c("BTC-USD")
 assets <- sort(assets)
 stocks = lapply(assets, function(sym) {
   dailyReturn(na.omit(getSymbols(sym,
                                    src="yahoo",
-                                   from="2018-02-20",
+                                   from="2015-02-20",
                                    to="2019-02-20",
                                    auto.assign=FALSE)))
 })
@@ -55,64 +25,72 @@ names(df) <- assets
 df
 ```
 ```{r}
-train.index <- createDataPartition(df$`BTC-USD`,
-                                   p = .75,
-                                   list = FALSE,
-                                   times = 1)
-y.train <- df[train.index,]
-y.test <- df[-train.index,]
-length(y.train)
-length(y.test)
-```
-
-```{r}
-xs <- vector("list", 10)
-
-#for (i in 1:10) {
-#  xs[i] <- Lag(y.train, i)
-#}
-
-train.df <- data.frame(y.train,
-                 x1=Lag(y.train, 1),
-                 x2=Lag(y.train, 2),
-                 x3=Lag(y.train, 3),
-                 x4=Lag(y.train, 4),
-                 x5=Lag(y.train, 5),
-                 x6=Lag(y.train, 6),
-                 x7=Lag(y.train, 7),
-                 x8=Lag(y.train, 8),
-                 x9=Lag(y.train, 9),
-                 x10=Lag(y.train, 10))
-names(train.df) <- c('y', 'x1', 'x2', 'x3', 'x4', 'x5',
-                     'x6', 'x7', 'x8', 'x9', 'x10')
-head(train.df)
-```
-
-```{r}
-train.df <- na.omit(train.df)
-head(train.df)
-```
-
-```{r}
-net <- neuralnet(y~x1+x2+x3+x4+x5+x6+x7+x8+x9+x10,
-                 train.df,
-                 hidden = c(10, 10, 10, 10),
-                 threshold = 0.01)
-plot(net)
-```
-```{r}
-test.df <- as.data.frame((1:10)^2)
-net.results <- compute(net.sqrt, test.df)
-ls(net.results)
-
-print(net.results$net.result)
-
-clean.y <- cbind(test.df, sqrt(test.df), as.data.frame(net.results$net.result))
-colnames(clean.y) <- c("x", "y", "y pred.")
-print(clean.y)
-
-y <- net.results$net.result
-df <- data.frame(y, x1=Lag(y, 1), x2=Lag(y, 2))
-names(df) <- c('y', 'x1', 'x2')
+df <- data.frame(df,
+                 x1=Lag(df, 1))
+names(df) <- c('x1', 'y')
+nrow(df)
 head(df)
+```
+
+```{r}
+df <- na.omit(df)
+nrow(df)
+head(df)
+```
+```{r}
+train.index <- round(0.8 * nrow(df))
+train.df <- df[1:train.index,]
+test.df <- df[-(1:train.index),]
+tail(train.df)
+head(test.df)
+nrow(train.df)
+nrow(test.df)
+```
+```{r, fig.width=11, fig.height=4}
+plot.train.df <- cbind(day = rownames(train.df), train.df)
+plot.test.df <- cbind(day = rownames(test.df), test.df)
+ggplot() +
+geom_line(data=plot.train.df, aes(x=as.Date(plot.train.df$day), y=plot.train.df$y, colour="Training")) +
+geom_line(data=plot.test.df, aes(x=as.Date(plot.test.df$day), y=plot.test.df$y, colour="Test")) +
+xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent)
+ggsave("btcperf.pdf", width=8, height=4)
+```
+```{r}
+x.test <- test.df[, 1:(length(names(df))-1)]
+y.test <- test.df[, length(names(df))]
+y.train <- train.df[, length(names(df))]
+set.seed(42)
+net <- neuralnet(y~x1,
+                 train.df,
+                 hidden = c(90, 60, 30, 20),
+                 threshold = 0.03
+                 # stepmax = 1e+9
+                 # rep = 5
+)
+y.train.pred <- as.data.frame(net$net.result)
+colnames(y.train.pred) <- c("V1")
+net$result.matrix[1:3,]
+```
+```{r}
+y.train.comp.df <- cbind(y.train, y.train.pred, plot.train.df$day)
+colnames(y.train.comp.df) <- c("y (train)", "y pred. (train)", "Date")
+
+pred <- neuralnet::compute(net, x.test)
+y.test.pred <- as.data.frame(pred$net.result)
+y.test.comp.df <- cbind(y.test, y.test.pred, plot.test.df$day)
+colnames(y.test.comp.df) <- c("y (test)", "y pred. (test)", "Date")
+
+cat("RMSE on Training Set:\n")
+train.rmse <- RMSE(pred = y.train.pred$V1, obs = y.train)
+train.rmse
+
+cat("\nRMSE on Test Set:\n")
+test.rmse <- RMSE(pred = y.test.pred$V1, obs = y.test)
+test.rmse
+
+cat("\nRMSE Difference (Test - Train):\n")
+test.rmse - train.rmse
+```
+```{r}
+# plot(net)
 ```
