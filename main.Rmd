@@ -9,6 +9,11 @@ library(quantmod)
 library(caret)
 library(ggplot2)
 library(scales)
+library(MLmetrics)
+library(dplyr)
+library(ggseas)
+library(forecast)
+library(seasonal)
 
 tickers <- c("BTC-USD")
 tickers <- sort(tickers)
@@ -22,7 +27,14 @@ ticker.returns = lapply(tickers, function(sym) {
 
 df <- as.data.frame(do.call(merge.xts, ticker.returns))
 names(df) <- tickers
-df
+head(df)
+tail(df)
+play.df <- df
+play.df$"date" <- as.Date(rownames(play.df))
+date.range <- seq(min(play.df$date), max(play.df$date), by = 1) 
+date.range[!date.range %in% play.df$date]
+which(play.df$date == "2015-10-26")
+play.df[248,]
 ```
 ```{r}
 df <- data.frame(df,
@@ -37,14 +49,15 @@ df <- data.frame(df,
                  x9=Lag(df, 9),
                  x10=Lag(df, 10)
 )
-names(df) <- c('x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9', 'x10', 'y')
+names(df) <- c('y', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9', 'x10')
 nrow(df)
-head(df)
+df
 ```
 
 ```{r}
 df <- na.omit(df)
 nrow(df)
+df <- df[, c(2:11, 1)]
 head(df)
 ```
 ```{r}
@@ -67,62 +80,175 @@ ggtitle("BTC-USD Daily Returns Feb. 2015 - Feb. 2019")
 ggsave("btcperf.pdf", width=8, height=4)
 ```
 ```{r}
+ts.df2 %>% decompose %>% autoplot
+plot.train.df$day
+plot.train.df$y
+cols <- c(1, 12)
+plot.df <- as.data.frame(plot.train.df[,cols])
+ts.df <- xts(plot.df[2], order.by = as.Date(plot.df$day))
+plot.test.df[,cols]$day <- as.Date(plot.test.df[,cols]$day)
+plot.test.df[,cols]
+ts.df2 <- ts(y.test, start = c(2015, 2, 20), end = c(2019, 2, 16), frequency = 24)
+ts.df2
+decompose_beer = decompose(ts.df2, "multiplicative")
+plot(as.ts(decompose_beer$seasonal))
+plot(as.ts(decompose_beer$trend))
+plot(as.ts(decompose_beer$random))
+plot(decompose_beer)
+
+y.test
+as.Date(rownames(test.df))
+test.df$index
+ggsdc(data=ts.df2, aes(x=ts.df2, y = ts.df2), method = "seas") + geom_line()
+```
+```{r}
+ggAcf(df$`BTC-USD`)
+```
+```{r}
+ggPacf(df$`BTC-USD`)
+```
+```{r}
 x.test <- test.df[, 1:(length(names(df))-1)]
 y.test <- test.df[, length(names(df))]
 y.train <- train.df[, length(names(df))]
 set.seed(42)
+softplus <- function(x) {log(1+exp(x))}
 net <- neuralnet(y~x1+x2+x3+x4+x5+x6+x7+x8+x9+x10,
                  train.df,
                  hidden = c(90, 60, 30),
                  threshold = 0.01
-                 # stepmax = 1e+9
-                 # rep = 5
+                 # stepmax = 1e+9,
+                 # rep = 5,
+                 # algorithm = "backprop", "rprop+", "rprop-", "sag", "slr",
+                 # err.fct = "sse", "ce",
+                 # act.fct = softplus
+                 # act.fct = "logistic", "tanh"
+                 # linear.output = TRUE
 )
 y.train.pred <- as.data.frame(net$net.result)
 colnames(y.train.pred) <- c("V1")
 net$result.matrix[1:3,]
 ```
 ```{r}
-y.train.comp.df <- cbind(y.train, y.train.pred, plot.train.df$day)
-colnames(y.train.comp.df) <- c("y (train)", "y pred. (train)", "Date")
+train.df.lag.ma <- rowMeans(train.df[,1:10])
+test.df.lag.ma <- rowMeans(test.df[,1:10])
+
+naive.train <- train.df$x1
+naive.test <- test.df$x1
+
+y.train.comp.df <- cbind(y.train, y.train.pred, y.train.pred-y.train, train.df.lag.ma, naive.train, plot.train.df$day)
+colnames(y.train.comp.df) <- c("y_train", "y_pred", "nn_residual", "ma", "naive", "date")
 
 pred <- neuralnet::compute(net, x.test)
 y.test.pred <- as.data.frame(pred$net.result)
-y.test.comp.df <- cbind(y.test, y.test.pred, plot.test.df$day)
-colnames(y.test.comp.df) <- c("y (test)", "y pred. (test)", "Date")
+y.test.comp.df <- cbind(y.test, y.test.pred, y.test.pred-y.test, test.df.lag.ma, naive.test, plot.test.df$day)
+colnames(y.test.comp.df) <- c("y_test", "y_pred", "nn_residual", "ma", "naive", "date")
 
-cat("RMSE on Training Set:\n")
-train.rmse <- RMSE(pred = y.train.pred$V1, obs = y.train)
-train.rmse
+cat("Neural Network Accuracy - Training Set:")
+cat("\nMAE:", MLmetrics::MAE(y.train.pred$V1, y.train))
+cat("\nRMSE:", MLmetrics::RMSE(y.train.pred$V1, y.train))
+cat("\nMAPE:", MLmetrics::MAPE(y.train.pred$V1, y.train))
 
-cat("\nRMSE on Test Set:\n")
-test.rmse <- RMSE(pred = y.test.pred$V1, obs = y.test)
-test.rmse
+cat("\n\nNeural Network Accuracy - Test Set:")
+cat("\nMAE:", MLmetrics::MAE(y.test.pred$V1, y.test))
+cat("\nRMSE:", MLmetrics::RMSE(y.test.pred$V1, y.test))
+cat("\nMAPE:", MLmetrics::MAPE(y.test.pred$V1, y.test))
 
-cat("\nRMSE Difference (Test - Train):\n")
-test.rmse - train.rmse
-```
-```{r}
-y.train.comp.df
-y.test.comp.df
+cat("\n\nNeural Network RMSE Difference (Test - Train):\n")
+nn.rmse.diff <- MLmetrics::RMSE(y.test.pred$V1, y.test) - MLmetrics::RMSE(y.train.pred$V1, y.train)
+if (nn.rmse.diff > 0) {
+  cat(nn.rmse.diff, "(Overfitting)")
+} else {
+  cat(nn.rmse.diff, "(Underfitting)")
+}
+
+cat("\n\n\n10-Day Moving Average Accuracy - Training Set:")
+cat("\nMAE:", MLmetrics::MAE(y.train.comp.df$ma, y.train))
+cat("\nRMSE:", MLmetrics::RMSE(y.train.comp.df$ma, y.train))
+cat("\nMAPE:", MLmetrics::MAPE(y.train.comp.df$ma, y.train))
+
+cat("\n\n10-Day Moving Average Accuracy - Test Set:")
+cat("\nMAE:", MLmetrics::MAE(y.test.comp.df$ma, y.test))
+cat("\nRMSE:", MLmetrics::RMSE(y.test.comp.df$ma, y.test))
+cat("\nMAPE:", MLmetrics::MAPE(y.test.comp.df$ma, y.test))
+
+cat("\n\nNeural Network RMSE Difference (Test - Train):\n")
+ma.rmse.diff <- MLmetrics::RMSE(y.test.comp.df$ma, y.test) - MLmetrics::RMSE(y.train.comp.df$ma, y.train)
+if (ma.rmse.diff > 0) {
+  cat(ma.rmse.diff, "(Overfitting)")
+} else {
+  cat(ma.rmse.diff, "(Underfitting)")
+}
+
+cat("\n\n\nNaive Approach Accuracy - Training Set:")
+cat("\nMAE:", MLmetrics::MAE(y.train.comp.df$naive, y.train))
+cat("\nRMSE:", MLmetrics::RMSE(y.train.comp.df$naive, y.train))
+cat("\nMAPE:", MLmetrics::MAPE(y.train.comp.df$naive, y.train))
+
+cat("\n\nNaive Approach Accuracy - Test Set:")
+cat("\nMAE:", MLmetrics::MAE(y.test.comp.df$naive, y.test))
+cat("\nRMSE:", MLmetrics::RMSE(y.test.comp.df$naive, y.test))
+cat("\nMAPE:", MLmetrics::MAPE(y.test.comp.df$naive, y.test))
+
+cat("\n\nNeural Network RMSE Difference (Test - Train):\n")
+naive.rmse.diff <- MLmetrics::RMSE(y.test.comp.df$naive, y.test) - MLmetrics::RMSE(y.train.comp.df$naive, y.train)
+if (naive.rmse.diff > 0) {
+  cat(naive.rmse.diff, "(Overfitting)")
+} else {
+  cat(naive.rmse.diff, "(Underfitting)")
+}
 ```
 ```{r, fig.width=11, fig.height=4}
-ggplot(data=y.train.comp.df, aes(x=as.Date(y.train.comp.df$Date))) +
-geom_line(aes(y=y.train.comp.df$`y (train)`, colour="Actual")) +
-geom_line(aes(y=y.train.comp.df$`y pred. (train)`, colour="Predicted")) +
+ggplot(data=y.train.comp.df, aes(x=as.Date(y.train.comp.df$date))) +
+geom_line(aes(y=y.train.comp.df$y_train, colour="Actual")) +
+geom_line(aes(y=y.train.comp.df$ma, colour="10-Day Moving Average")) +
+xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
+scale_color_discrete("Values") +
+ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
+ggsave("test_pred.pdf", width=8, height=4)
+```
+```{r, fig.width=11, fig.height=4}
+ggplot(data=y.train.comp.df, aes(x=as.Date(y.train.comp.df$date))) +
+geom_line(aes(y=y.train.comp.df$y_train, colour="Actual")) +
+geom_line(aes(y=y.train.comp.df$y_pred, colour="Predicted")) +
+geom_line(aes(y=y.train.comp.df$ma, colour="10-Day Moving Average")) +
+geom_line(aes(y=y.train.comp.df$nn_residual, colour="Residual"), linetype = "dotted") +
+geom_area(aes(y=y.train.comp.df$nn_residual), fill="lightblue", linetype="dotted", alpha=0.4) +
 xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
 scale_color_discrete("Values") +
 ggtitle("BTC-USD Daily Returns - Training Set: Actual vs Predicted Values")
 ggsave("train_perf.pdf", width=8, height=4)
 ```
 ```{r, fig.width=11, fig.height=4}
-ggplot(data=y.test.comp.df, aes(x=as.Date(y.test.comp.df$Date))) +
-geom_line(aes(y=y.test.comp.df$`y (test)`, colour="Actual")) +
-geom_line(aes(y=y.test.comp.df$`y pred. (test)`, colour="Predicted")) +
+ggplot(data=y.test.comp.df, aes(x=as.Date(y.test.comp.df$date))) +
+geom_line(aes(y=y.test.comp.df$y_test, colour="Actual")) +
+geom_line(aes(y=y.test.comp.df$ma, colour="10-Day Moving Average")) +
 xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
 scale_color_discrete("Values") +
 ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
 ggsave("test_pred.pdf", width=8, height=4)
+```
+```{r, fig.width=11, fig.height=4}
+ggplot(data=y.test.comp.df, aes(x=as.Date(y.test.comp.df$date))) +
+geom_line(aes(y=y.test.comp.df$y_test, colour="Actual")) +
+geom_line(aes(y=y.test.comp.df$y_pred, colour="Predicted")) +
+geom_line(aes(y=y.test.comp.df$ma, colour="10-Day Moving Average")) +
+geom_line(aes(y=y.test.comp.df$nn_residual, colour="Residual"), linetype = "dotted") +
+geom_area(aes(y=y.test.comp.df$nn_residual), fill="lightblue", linetype="dotted", alpha=0.4) +
+xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
+scale_color_discrete("Values") +
+ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
+ggsave("test_pred.pdf", width=8, height=4)
+```
+```{r}
+hw <- HoltWinters(ts.df2, alpha = 0.5, beta = 0.5, gamma = 1)
+plot(hw)
+forecast <- predict(hw, n.ahead = 12, prediction.interval = T, level = 0.95)
+plot(hw, forecast)
+```
+```{r}
+y.train.comp.df
+y.test.comp.df
 ```
 ```{r}
 # plot(net)
