@@ -123,7 +123,7 @@ fit <- auto.arima(y, xreg=z, seasonal=F)
 fc <- forecast(fit, xreg=zf, h=355)
 autoplot(fc) + xlab("Time") + ylab("Return") +
 scale_y_continuous(labels=percent)
-ggsave("train_arima.pdf", width=8, height=4)
+ggsave("train_test_arima.pdf", width=8, height=4)
 ```
 ```{r, fig.width=11, fig.height=4}
 # hw <- HoltWinters(train.weekly.ts)
@@ -133,13 +133,13 @@ ggsave("train_arima.pdf", width=8, height=4)
 gg.hw <- hw(train.weekly.ts, h=355)
 autoplot(gg.hw) + xlab("Time") + ylab("Return") +
 scale_y_continuous(labels=percent)
-ggsave("train_hw.pdf", width=8, height=4)
+ggsave("train_test_hw.pdf", width=8, height=4)
 ```
 ```{r, fig.width=11, fig.height=4}
 stl.pred <- forecast(train.yearly.ts, h=355)
 autoplot(stl.pred) + xlab("Time") + ylab("Return") +
 scale_y_continuous(labels=percent)
-ggsave("train_stl.pdf", width=8, height=4)
+ggsave("train_test_stl.pdf", width=8, height=4)
 ```
 ```{r}
 x.test <- test.df[, 1:(length(names(df))-1)]
@@ -306,6 +306,6 @@ ggsave("test_nn_stl.pdf", width=6, height=4)
 y.train.comp.df
 y.test.comp.df
 ```
-```{r}
+```{r, fig.width=11, fig.height=5}
 plot(net)
 ```
