@@ -14,27 +14,39 @@ library(dplyr)
 library(ggseas)
 library(forecast)
 library(seasonal)
+library(reshape2)
 
 tickers <- c("BTC-USD")
 tickers <- sort(tickers)
 ticker.returns = lapply(tickers, function(sym) {
   dailyReturn(na.omit(getSymbols(sym,
                                    src="yahoo",
-                                   from="2015-02-20",
-                                   to="2019-02-20",
+                                   from="2015-01-22",
+                                   to="2019-01-22",
                                    auto.assign=FALSE)))
 })
 
 df <- as.data.frame(do.call(merge.xts, ticker.returns))
 names(df) <- tickers
+
+df$date <- as.Date(rownames(df))
+date.range <- seq(min(df$date), max(df$date), by = 1) 
+missing.dates.df <- data.frame(date.range[!date.range %in% df$date])
+names(missing.dates.df) <- "date"
+missing.dates.df$`BTC-USD` <- NA
+df <- rbind(missing.dates.df, df)
+df <- df[order(df$date),]
+names(df)[2] <- "return"
+df.mean <- mean(na.omit(df$return))
+df[is.na(df$return),]$return <- df.mean
+rownames(df) <- df$date
+df <- subset(df, select = c("return"))
+
 head(df)
 tail(df)
-play.df <- df
-play.df$"date" <- as.Date(rownames(play.df))
-date.range <- seq(min(play.df$date), max(play.df$date), by = 1) 
-date.range[!date.range %in% play.df$date]
-which(play.df$date == "2015-10-26")
-play.df[248,]
+```
+```{r}
+
 ```
 ```{r}
 df <- data.frame(df,
@@ -61,7 +73,7 @@ df <- df[, c(2:11, 1)]
 head(df)
 ```
 ```{r}
-train.index <- round(0.8 * nrow(df))
+train.index <- round(0.7555 * nrow(df))
 train.df <- df[1:train.index,]
 test.df <- df[-(1:train.index),]
 nrow(train.df)
@@ -70,42 +82,52 @@ tail(train.df)
 head(test.df)
 ```
 ```{r, fig.width=11, fig.height=4}
-plot.train.df <- cbind(day = rownames(train.df), train.df)
-plot.test.df <- cbind(day = rownames(test.df), test.df)
+plot.train.df <- cbind(date = as.Date(rownames(train.df)), train.df)
+plot.test.df <- cbind(date = as.Date(rownames(test.df)), test.df)
 ggplot() +
-geom_line(data=plot.train.df, aes(x=as.Date(plot.train.df$day), y=plot.train.df$y, colour="Training")) +
-geom_line(data=plot.test.df, aes(x=as.Date(plot.test.df$day), y=plot.test.df$y, colour="Test")) +
+geom_line(data=plot.train.df, aes(x=plot.train.df$date, y=plot.train.df$y, colour="Training")) +
+geom_line(data=plot.test.df, aes(x=plot.test.df$date, y=plot.test.df$y, colour="Test")) +
 xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) +
-ggtitle("BTC-USD Daily Returns Feb. 2015 - Feb. 2019")
+  scale_colour_manual(name="Legend", values = c("#377EB8", "black")) +
+ggtitle("BTC-USD Daily Returns Feb 2015 - Feb 2019")
 ggsave("btcperf.pdf", width=8, height=4)
 ```
-```{r}
-ts.df2 %>% decompose %>% autoplot
-plot.train.df$day
-plot.train.df$y
-cols <- c(1, 12)
-plot.df <- as.data.frame(plot.train.df[,cols])
-ts.df <- xts(plot.df[2], order.by = as.Date(plot.df$day))
-plot.test.df[,cols]$day <- as.Date(plot.test.df[,cols]$day)
-plot.test.df[,cols]
-ts.df2 <- ts(y.test, start = c(2015, 2, 20), end = c(2019, 2, 16), frequency = 24)
-ts.df2
-decompose_beer = decompose(ts.df2, "multiplicative")
-plot(as.ts(decompose_beer$seasonal))
-plot(as.ts(decompose_beer$trend))
-plot(as.ts(decompose_beer$random))
-plot(decompose_beer)
+```{r, fig.width=11, fig.height=4}
+ggtsdisplay(train.df$y, main="Autocorrelation and Partial Autocorrelation",
+            points=F, xlab="Time", ylab="Return")
+ggsave("train_arima.pdf", width=8, height=4)
+```
+```{r, fig.width=11, fig.height=4}
+train.weekly.ts <- ts(train.df$y, frequency = 7)
+train.yearly.ts <- ts(train.df$y, frequency = 365.25)
+train.yearly.ts %>% decompose %>% autoplot
+ggsave("train_decomp.pdf", width=8, height=4)
+```
+```{r, fig.width=11, fig.height=4}
+y <- train.weekly.ts
+z <- fourier(train.yearly.ts, K=5)
+zf <- fourier(train.yearly.ts, K=5, h=355)
+fit <- auto.arima(y, xreg=z, seasonal=F)
+fc <- forecast(fit, xreg=zf, h=355)
+autoplot(fc) + xlab("Time") + ylab("Return") +
+scale_y_continuous(labels=percent)
+ggsave("train_arima.pdf", width=8, height=4)
+```
+```{r, fig.width=11, fig.height=4}
+# hw <- HoltWinters(train.weekly.ts)
+# hw.pred <- predict(hw, n.ahead = 355, prediction.interval = T, level = 0.95)
+# plot(hw, hw.pred)
 
-y.test
-as.Date(rownames(test.df))
-test.df$index
-ggsdc(data=ts.df2, aes(x=ts.df2, y = ts.df2), method = "seas") + geom_line()
+gg.hw <- hw(train.weekly.ts, h=355)
+autoplot(gg.hw) + xlab("Time") + ylab("Return") +
+scale_y_continuous(labels=percent)
+ggsave("train_hw.pdf", width=8, height=4)
 ```
-```{r}
-ggAcf(df$`BTC-USD`)
-```
-```{r}
-ggPacf(df$`BTC-USD`)
+```{r, fig.width=11, fig.height=4}
+stl.pred <- forecast(train.yearly.ts, h=355)
+autoplot(stl.pred) + xlab("Time") + ylab("Return") +
+scale_y_continuous(labels=percent)
+ggsave("train_stl.pdf", width=8, height=4)
 ```
 ```{r}
 x.test <- test.df[, 1:(length(names(df))-1)]
@@ -136,13 +158,13 @@ test.df.lag.ma <- rowMeans(test.df[,1:10])
 naive.train <- train.df$x1
 naive.test <- test.df$x1
 
-y.train.comp.df <- cbind(y.train, y.train.pred, y.train.pred-y.train, train.df.lag.ma, naive.train, plot.train.df$day)
+y.train.comp.df <- cbind(y.train, y.train.pred, y.train.pred-y.train, train.df.lag.ma, naive.train, plot.train.df$date)
 colnames(y.train.comp.df) <- c("y_train", "y_pred", "nn_residual", "ma", "naive", "date")
 
 pred <- neuralnet::compute(net, x.test)
 y.test.pred <- as.data.frame(pred$net.result)
-y.test.comp.df <- cbind(y.test, y.test.pred, y.test.pred-y.test, test.df.lag.ma, naive.test, plot.test.df$day)
-colnames(y.test.comp.df) <- c("y_test", "y_pred", "nn_residual", "ma", "naive", "date")
+y.test.comp.df <- cbind(y.test, y.test.pred, y.test.pred-y.test, test.df.lag.ma, naive.test, as.vector(stl.pred$mean), plot.test.df$date)
+colnames(y.test.comp.df) <- c("y_test", "y_pred", "nn_residual", "ma", "naive", "stl", "date")
 
 cat("Neural Network Accuracy - Training Set:")
 cat("\nMAE:", MLmetrics::MAE(y.train.pred$V1, y.train))
@@ -197,26 +219,35 @@ if (naive.rmse.diff > 0) {
 } else {
   cat(naive.rmse.diff, "(Underfitting)")
 }
+
+cat("\n\n\nSTL Forecasting Accuracy - Test Set:")
+cat("\nMAE:", MLmetrics::MAE(y.test.comp.df$stl, y.test))
+cat("\nRMSE:", MLmetrics::RMSE(y.test.comp.df$stl, y.test))
+cat("\nMAPE:", MLmetrics::MAPE(y.test.comp.df$stl, y.test))
+```
+```{r}
+RColorBrewer::brewer.pal(9, "Set1")
+default.colours <- c("#F8766D", "#B79F00", "#00BA38", "#00BFC4", "#619CFF", "#F564E3")
+default.colours
 ```
 ```{r, fig.width=11, fig.height=4}
 ggplot(data=y.train.comp.df, aes(x=as.Date(y.train.comp.df$date))) +
 geom_line(aes(y=y.train.comp.df$y_train, colour="Actual")) +
 geom_line(aes(y=y.train.comp.df$ma, colour="10-Day Moving Average")) +
 xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
-scale_color_discrete("Values") +
-ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
+scale_colour_manual(name="Legend", values= c("#FF7F00", "black")) +
+ggtitle("BTC-USD Daily Returns - Training Set: 10-Day Moving Average")
 ggsave("test_pred.pdf", width=8, height=4)
 ```
 ```{r, fig.width=11, fig.height=4}
 ggplot(data=y.train.comp.df, aes(x=as.Date(y.train.comp.df$date))) +
 geom_line(aes(y=y.train.comp.df$y_train, colour="Actual")) +
 geom_line(aes(y=y.train.comp.df$y_pred, colour="Predicted")) +
-geom_line(aes(y=y.train.comp.df$ma, colour="10-Day Moving Average")) +
-geom_line(aes(y=y.train.comp.df$nn_residual, colour="Residual"), linetype = "dotted") +
-geom_area(aes(y=y.train.comp.df$nn_residual), fill="lightblue", linetype="dotted", alpha=0.4) +
+# geom_line(aes(y=y.train.comp.df$nn_residual, colour="Residual"), linetype = "dotted") +
+# geom_area(aes(y=y.train.comp.df$nn_residual), fill="lightblue", linetype="dotted", alpha=0.4) +
 xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
-scale_color_discrete("Values") +
-ggtitle("BTC-USD Daily Returns - Training Set: Actual vs Predicted Values")
+scale_colour_manual(name="Legend", values = c("black", "#F8766D", "#E41A1C")) +
+ggtitle("BTC-USD Daily Returns - Training Set: Neural Network Actual vs Predicted Values")
 ggsave("train_perf.pdf", width=8, height=4)
 ```
 ```{r, fig.width=11, fig.height=4}
@@ -224,7 +255,7 @@ ggplot(data=y.test.comp.df, aes(x=as.Date(y.test.comp.df$date))) +
 geom_line(aes(y=y.test.comp.df$y_test, colour="Actual")) +
 geom_line(aes(y=y.test.comp.df$ma, colour="10-Day Moving Average")) +
 xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
-scale_color_discrete("Values") +
+scale_color_manual("Legend", values = c("#FF7F00","#377EB8")) +
 ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
 ggsave("test_pred.pdf", width=8, height=4)
 ```
@@ -232,19 +263,21 @@ ggsave("test_pred.pdf", width=8, height=4)
 ggplot(data=y.test.comp.df, aes(x=as.Date(y.test.comp.df$date))) +
 geom_line(aes(y=y.test.comp.df$y_test, colour="Actual")) +
 geom_line(aes(y=y.test.comp.df$y_pred, colour="Predicted")) +
-geom_line(aes(y=y.test.comp.df$ma, colour="10-Day Moving Average")) +
-geom_line(aes(y=y.test.comp.df$nn_residual, colour="Residual"), linetype = "dotted") +
-geom_area(aes(y=y.test.comp.df$nn_residual), fill="lightblue", linetype="dotted", alpha=0.4) +
+# geom_line(aes(y=y.test.comp.df$nn_residual, colour="Residual"), linetype = "dotted") +
+# geom_area(aes(y=y.test.comp.df$nn_residual), fill="lightblue", linetype="dotted", alpha=0.4) +
 xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
-scale_color_discrete("Values") +
+scale_colour_manual(name="Legend", values = c("#377EB8", "#F8766D", "#E41A1C")) +
 ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
 ggsave("test_pred.pdf", width=8, height=4)
 ```
-```{r}
-hw <- HoltWinters(ts.df2, alpha = 0.5, beta = 0.5, gamma = 1)
-plot(hw)
-forecast <- predict(hw, n.ahead = 12, prediction.interval = T, level = 0.95)
-plot(hw, forecast)
+```{r, fig.width=11, fig.height=4}
+ggplot(data=y.test.comp.df, aes(x=as.Date(y.test.comp.df$date))) +
+geom_line(aes(y=y.test.comp.df$y_test, colour="Actual")) +
+geom_line(aes(y=y.test.comp.df$stl, colour="Predicted")) +
+xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
+scale_colour_manual(name="Legend", values = c("#377EB8", "#F8766D", "#E41A1C")) +
+ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
+ggsave("test_pred.pdf", width=8, height=4)
 ```
 ```{r}
 y.train.comp.df
