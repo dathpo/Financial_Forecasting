@@ -291,7 +291,7 @@ scale_colour_manual(name="Legend", values = c("#377EB8", "#4DAF4A")) +
 ggtitle("Test Set - STL + ETS(A,N,N) - Actual vs Predicted Values")
 ggsave("test_stl.pdf", width=8, height=4)
 ```
-```{r}
+```{r, fig.width=6, fig.height=4}
 ggplot(data=y.test.comp.df, aes(y=unscale(y.test.comp.df$y_test))) +
 geom_point(aes(x=unscale(y.test.comp.df$y_pred), colour="Neural Network"), size=0.8) +
 geom_point(aes(x=y.test.comp.df$stl, colour="STL + ETS(A,N,N)"), size=0.8) +
