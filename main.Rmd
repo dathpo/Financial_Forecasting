@@ -15,6 +15,7 @@ library(ggseas)
 library(forecast)
 library(seasonal)
 library(reshape2)
+library(DMwR)
 
 tickers <- c("BTC-USD")
 tickers <- sort(tickers)
@@ -46,9 +47,13 @@ head(df)
 tail(df)
 ```
 ```{r}
-
-```
-```{r}
+unscaled.ret <- df$return
+scaled.ret <- scale(df$return)
+df$return <- scaled.ret
+unscale <- function(scaled.vector) {
+  unscaled.vector <- scaled.vector * attr(scaled.ret, 'scaled:scale') + attr(scaled.ret, 'scaled:center')
+  return(unscaled.vector)
+}
 df <- data.frame(df,
                  x1=Lag(df, 1),
                  x2=Lag(df, 2),
@@ -85,23 +90,30 @@ head(test.df)
 plot.train.df <- cbind(date = as.Date(rownames(train.df)), train.df)
 plot.test.df <- cbind(date = as.Date(rownames(test.df)), test.df)
 ggplot() +
-geom_line(data=plot.train.df, aes(x=plot.train.df$date, y=plot.train.df$y, colour="Training")) +
-geom_line(data=plot.test.df, aes(x=plot.test.df$date, y=plot.test.df$y, colour="Test")) +
-xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) +
+geom_line(data=plot.train.df, aes(x=plot.train.df$date, y=unscale(plot.train.df$y), colour="Training")) +
+geom_line(data=plot.test.df, aes(x=plot.test.df$date, y=unscale(plot.test.df$y), colour="Test")) +
+xlab("Time") + ylab("Return") + scale_y_continuous(labels=percent) +
   scale_colour_manual(name="Legend", values = c("#377EB8", "black")) +
 ggtitle("BTC-USD Daily Returns Feb 2015 - Feb 2019")
 ggsave("btcperf.pdf", width=8, height=4)
 ```
-```{r, fig.width=11, fig.height=4}
-ggtsdisplay(train.df$y, main="Autocorrelation and Partial Autocorrelation",
+```{r, fig.width=11, fig.height=5}
+ggtsdisplay(unscale(train.df$y), main="Autocorrelation and Partial Autocorrelation",
             points=F, xlab="Time", ylab="Return")
-ggsave("train_arima.pdf", width=8, height=4)
+GG_save_pdf = function(list, filename) {
+  pdf(filename, 8, 5)
+  for (p in list) {}
+  dev.off()
+  invisible(NULL)
+}
+GG_save_pdf(ggtsdisplay(unscale(train.df$y), main="Autocorrelation and Partial Autocorrelation",
+            points=F, xlab="Time", ylab="Return"), "acf_pacf.pdf")
 ```
-```{r, fig.width=11, fig.height=4}
-train.weekly.ts <- ts(train.df$y, frequency = 7)
-train.yearly.ts <- ts(train.df$y, frequency = 365.25)
+```{r, fig.width=11, fig.height=5}
+train.weekly.ts <- ts(unscale(train.df$y), frequency = 7)
+train.yearly.ts <- ts(unscale(train.df$y), frequency = 365.25)
 train.yearly.ts %>% decompose %>% autoplot
-ggsave("train_decomp.pdf", width=8, height=4)
+ggsave("train_decomp.pdf", width=8, height=5)
 ```
 ```{r, fig.width=11, fig.height=4}
 y <- train.weekly.ts
@@ -231,58 +243,69 @@ default.colours <- c("#F8766D", "#B79F00", "#00BA38", "#00BFC4", "#619CFF", "#F5
 default.colours
 ```
 ```{r, fig.width=11, fig.height=4}
-ggplot(data=y.train.comp.df, aes(x=as.Date(y.train.comp.df$date))) +
-geom_line(aes(y=y.train.comp.df$y_train, colour="Actual")) +
-geom_line(aes(y=y.train.comp.df$ma, colour="10-Day Moving Average")) +
-xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
+ggplot(data=y.train.comp.df, aes(x=y.train.comp.df$date)) +
+geom_line(aes(y=unscale(y.train.comp.df$y_train), colour="Actual")) +
+geom_line(aes(y=unscale(y.train.comp.df$ma), colour="10-Day Moving Average")) +
+xlab("Time") + ylab("Return") + scale_y_continuous(labels=percent) + 
 scale_colour_manual(name="Legend", values= c("#FF7F00", "black")) +
-ggtitle("BTC-USD Daily Returns - Training Set: 10-Day Moving Average")
-ggsave("test_pred.pdf", width=8, height=4)
+ggtitle("Training Set - 10-Day Moving Average")
+ggsave("train_ma.pdf", width=8, height=4)
 ```
 ```{r, fig.width=11, fig.height=4}
-ggplot(data=y.train.comp.df, aes(x=as.Date(y.train.comp.df$date))) +
-geom_line(aes(y=y.train.comp.df$y_train, colour="Actual")) +
-geom_line(aes(y=y.train.comp.df$y_pred, colour="Predicted")) +
+ggplot(data=y.train.comp.df, aes(x=y.train.comp.df$date)) +
+geom_line(aes(y=unscale(y.train.comp.df$y_train), colour="Actual")) +
+geom_line(aes(y=unscale(y.train.comp.df$y_pred), colour="Predicted")) +
 # geom_line(aes(y=y.train.comp.df$nn_residual, colour="Residual"), linetype = "dotted") +
 # geom_area(aes(y=y.train.comp.df$nn_residual), fill="lightblue", linetype="dotted", alpha=0.4) +
-xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
+xlab("Time") + ylab("Return") + scale_y_continuous(labels=percent) + 
 scale_colour_manual(name="Legend", values = c("black", "#F8766D", "#E41A1C")) +
-ggtitle("BTC-USD Daily Returns - Training Set: Neural Network Actual vs Predicted Values")
-ggsave("train_perf.pdf", width=8, height=4)
+ggtitle("Training Set - Neural Network - Actual vs Predicted Values")
+ggsave("train_nn.pdf", width=8, height=4)
 ```
 ```{r, fig.width=11, fig.height=4}
-ggplot(data=y.test.comp.df, aes(x=as.Date(y.test.comp.df$date))) +
-geom_line(aes(y=y.test.comp.df$y_test, colour="Actual")) +
-geom_line(aes(y=y.test.comp.df$ma, colour="10-Day Moving Average")) +
-xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
+ggplot(data=y.test.comp.df, aes(x=y.test.comp.df$date)) +
+geom_line(aes(y=unscale(y.test.comp.df$y_test), colour="Actual")) +
+geom_line(aes(y=unscale(y.test.comp.df$ma), colour="10-Day Moving Average")) +
+xlab("Time") + ylab("Return") + scale_y_continuous(labels=percent) + 
 scale_color_manual("Legend", values = c("#FF7F00","#377EB8")) +
-ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
-ggsave("test_pred.pdf", width=8, height=4)
+ggtitle("Test Set - 10-Day Moving Average")
+ggsave("test_ma.pdf", width=8, height=4)
 ```
 ```{r, fig.width=11, fig.height=4}
-ggplot(data=y.test.comp.df, aes(x=as.Date(y.test.comp.df$date))) +
-geom_line(aes(y=y.test.comp.df$y_test, colour="Actual")) +
-geom_line(aes(y=y.test.comp.df$y_pred, colour="Predicted")) +
+ggplot(data=y.test.comp.df, aes(x=y.test.comp.df$date)) +
+geom_line(aes(y=unscale(y.test.comp.df$y_test), colour="Actual")) +
+geom_line(aes(y=unscale(y.test.comp.df$y_pred), colour="Predicted")) +
 # geom_line(aes(y=y.test.comp.df$nn_residual, colour="Residual"), linetype = "dotted") +
 # geom_area(aes(y=y.test.comp.df$nn_residual), fill="lightblue", linetype="dotted", alpha=0.4) +
-xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
-scale_colour_manual(name="Legend", values = c("#377EB8", "#F8766D", "#E41A1C")) +
-ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
-ggsave("test_pred.pdf", width=8, height=4)
+xlab("Time") + ylab("Return") + scale_y_continuous(labels=percent) + 
+scale_colour_manual(name="Legend", values = c("#377EB8", "#F8766D")) +
+ggtitle("Test Set - Neural Network - Actual vs Predicted Values")
+ggsave("test_nn.pdf", width=8, height=4)
 ```
 ```{r, fig.width=11, fig.height=4}
-ggplot(data=y.test.comp.df, aes(x=as.Date(y.test.comp.df$date))) +
-geom_line(aes(y=y.test.comp.df$y_test, colour="Actual")) +
+ggplot(data=y.test.comp.df, aes(x=y.test.comp.df$date)) +
+geom_line(aes(y=unscale(y.test.comp.df$y_test), colour="Actual")) +
 geom_line(aes(y=y.test.comp.df$stl, colour="Predicted")) +
-xlab("Date") + ylab("Return") + scale_y_continuous(labels=percent) + 
-scale_colour_manual(name="Legend", values = c("#377EB8", "#F8766D", "#E41A1C")) +
-ggtitle("BTC-USD Daily Returns - Test Set: Actual vs Predicted Values")
-ggsave("test_pred.pdf", width=8, height=4)
+xlab("Time") + ylab("Return") + scale_y_continuous(labels=percent) + 
+scale_colour_manual(name="Legend", values = c("#377EB8", "#4DAF4A")) +
+ggtitle("Test Set - STL + ETS(A,N,N) - Actual vs Predicted Values")
+ggsave("test_stl.pdf", width=8, height=4)
+```
+```{r}
+ggplot(data=y.test.comp.df, aes(y=unscale(y.test.comp.df$y_test))) +
+geom_point(aes(x=unscale(y.test.comp.df$y_pred), colour="Neural Network"), size=0.8) +
+geom_point(aes(x=y.test.comp.df$stl, colour="STL + ETS(A,N,N)"), size=0.8) +
+  geom_abline(colour="#377EB8") +
+xlab("Predicted Return") + ylab("Actual Return") + scale_y_continuous(labels=percent) + 
+scale_x_continuous(labels=percent) + 
+scale_colour_manual(name="Legend", values = c("#F8766D", "#4DAF4A")) +
+ggtitle("Test Set - Neural Network vs STL + ETS(A,N,N)")
+ggsave("test_nn_stl.pdf", width=6, height=4)
 ```
 ```{r}
 y.train.comp.df
 y.test.comp.df
 ```
 ```{r}
-# plot(net)
+plot(net)
 ```
