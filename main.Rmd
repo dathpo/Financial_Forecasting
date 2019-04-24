@@ -206,7 +206,7 @@ cat("\nMAE:", MLmetrics::MAE(y.test.comp.df$ma, y.test))
 cat("\nRMSE:", MLmetrics::RMSE(y.test.comp.df$ma, y.test))
 cat("\nMAPE:", MLmetrics::MAPE(y.test.comp.df$ma, y.test))
 
-cat("\n\nNeural Network RMSE Difference (Test - Train):\n")
+cat("\n\n10-Day Moving Average RMSE Difference (Test - Train):\n")
 ma.rmse.diff <- MLmetrics::RMSE(y.test.comp.df$ma, y.test) - MLmetrics::RMSE(y.train.comp.df$ma, y.train)
 if (ma.rmse.diff > 0) {
   cat(ma.rmse.diff, "(Overfitting)")
@@ -224,7 +224,7 @@ cat("\nMAE:", MLmetrics::MAE(y.test.comp.df$naive, y.test))
 cat("\nRMSE:", MLmetrics::RMSE(y.test.comp.df$naive, y.test))
 cat("\nMAPE:", MLmetrics::MAPE(y.test.comp.df$naive, y.test))
 
-cat("\n\nNeural Network RMSE Difference (Test - Train):\n")
+cat("\n\nNaive Approach RMSE Difference (Test - Train):\n")
 naive.rmse.diff <- MLmetrics::RMSE(y.test.comp.df$naive, y.test) - MLmetrics::RMSE(y.train.comp.df$naive, y.train)
 if (naive.rmse.diff > 0) {
   cat(naive.rmse.diff, "(Overfitting)")
